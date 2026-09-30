@@ -10,13 +10,16 @@
 //     from below with a wobble, live briefly, and dissolve. A light trickle
 //     always shimmers; speaking turns it into a rising fizz.
 //
-//   Layer 3 · DICTATION — a spray-wave that only exists while you speak.
-//     Particles are emitted from the left by voice pressure (quadratic, so
-//     quiet = sparse wisps, loud = full wide wave) and drain out the right
-//     when dictation stops. Each emission gets a fresh random lane and
-//     width; a slowly re-rolling burst width makes the ribbon randomly
-//     wide over time. In flight they ride one shared traveling wave that
-//     blooms from the source edge. All single toned.
+//   Layer 3 · DICTATION — a fine-particle spray that only exists while you
+//     speak. Ultra-fine dust is emitted from the left by voice pressure
+//     (quadratic, so quiet = sparse wisps, loud = a full wide wave) and
+//     drains out the right when dictation stops. Every grain rides the same
+//     traveling sine — a soft glowing ribbon with a slow secondary swell —
+//     scattered along the wave normal with gaussian falloff, so the spray
+//     sits dense on the line and mists outward. Both the ribbon amplitude
+//     and the mist breadth scale with dictation intensity and are re-rolled
+//     at random, so loud passages fan wide and restless while quiet ones
+//     collapse to a tight hairline. All single toned.
 //
 //   Processing (transcribing): influx + dictation collapse into a rotating
 //     ring; ambient dims but stays. Tiny timer below, nothing else.
@@ -55,9 +58,14 @@ Item {
     property var ambient: []
     // Layer 2 · influx bubbles: {x, life, rate, sz, ph, wob, spd}
     property var influx: []
-    // Layer 3 · dictation stream: {t, alive, b, wf, spd, sz, ph, lane,
-    //   wave jitter fields, a, r, rf}
+    // Layer 3 · dictation stream: {t, alive, b, wf, spd, sz, ph, tw, ng,
+    //   a, r, rf}  (ng = gaussian scatter offset from the wave line)
     property var stream: []
+    // Batched spray draw scratch: x, y, r, alpha bucket.
+    property var sprayX: null
+    property var sprayY: null
+    property var sprayR: null
+    property var sprayB: null
 
     readonly property bool active: daemonState === "recording" || daemonState === "streaming" || daemonState === "transcribing"
     readonly property bool isThinking: daemonState === "transcribing"
@@ -66,7 +74,7 @@ Item {
 
     readonly property int ambientCount: 38
     readonly property int influxCount: 50
-    readonly property int streamCount: 90
+    readonly property int streamCount: 560
     readonly property real fieldW: 320
     readonly property real fieldH: 64
 
@@ -102,6 +110,18 @@ Item {
         return lo + Math.random() * (hi - lo);
     }
 
+    // Rough standard normal, clamped to about [-2, 2]. Used for the spray's
+    // gaussian scatter: grains pile up on the wave line and thin out fast.
+    function _gauss() {
+        var z = (Math.random() + Math.random() + Math.random() - 1.5) / 0.5;
+        if (z > 2) {
+            z = 2;
+        } else if (z < -2) {
+            z = -2;
+        }
+        return z;
+    }
+
     // ---- Field geometry (bottom-docked, room below for the timer) ----
     function _fieldX() {
         var pos = String(_configValue("position", "bottom-center"));
@@ -133,14 +153,6 @@ Item {
         var m = Math.floor(totalSec / 60);
         var s = totalSec % 60;
         return m + ":" + (s < 10 ? "0" + s : s);
-    }
-
-    function _rollWave() {
-        return {
-            amp: _rand(0.5, 1.0),
-            freq: _rand(1.0, 4.2),
-            ph: _rand(0, Math.PI * 2)
-        };
     }
 
     function _initParticles() {
@@ -177,28 +189,26 @@ Item {
 
         var s = new Array(streamCount);
         for (var k = 0; k < streamCount; k++) {
-            var w = _rollWave();
-            var w2 = _rollWave();
             s[k] = {
                 t: 0.0,
                 alive: false,
                 b: 0.5,
-                wf: 1.0,
-                spd: _rand(0.8, 1.2),
-                sz: _rand(0.8, 2.0),
+                wf: _rand(0.35, 1.0),
+                spd: _rand(0.7, 1.35),
+                sz: _rand(0.3, 0.6),
                 ph: _rand(0, Math.PI * 2),
-                lane: _rand(-1, 1),
-                wAmp: w.amp, wFreq: w.freq, wPh: w.ph,
-                tAmp: w.amp, tFreq: w.freq, tPh: w.ph,
-                wAmp2: w2.amp, wFreq2: w2.freq, wPh2: w2.ph,
-                tAmp2: w2.amp, tFreq2: w2.freq, tPh2: w2.ph,
-                re: _rand(0.5, 3.5),
+                tw: _rand(1.6, 4.4),
+                ng: _gauss(),
                 a: Math.random() * Math.PI * 2,
                 r: 0.3 + Math.random() * 0.5,
                 rf: 0.72 + Math.random() * 0.5
             };
         }
         stream = s;
+        sprayX = new Float32Array(streamCount);
+        sprayY = new Float32Array(streamCount);
+        sprayR = new Float32Array(streamCount);
+        sprayB = new Uint8Array(streamCount);
     }
 
     Component.onCompleted: _initParticles()
@@ -323,23 +333,26 @@ Item {
                 p.r += (ringR * p.rf - p.r) * amount;
             }
 
-            // Layer 3: dictation spray — voice pressure emits particles at
-            // the left; they drain out the right. Silence = empty field.
+            // Layer 3: dictation spray — voice pressure emits fine dust at
+            // the left; the grains ride one shared sine and drain out the
+            // right. Silence = empty field.
             var st = root.stream;
-            var flowSpeed = 0.08 + e * 0.5;
+            var flowSpeed = 0.12 + e * 0.42;
             root.waveRetimer -= dt;
             if (root.waveRetimer <= 0) {
-                root.tWaveTurns = _rand(1.4, 2.2);
-                root.tWaveTurns2 = _rand(2.8, 4.0);
-                root.waveRetimer = _rand(4.0, 7.0);
+                root.tWaveTurns = _rand(1.2, 2.0);
+                root.tWaveTurns2 = _rand(2.6, 3.8);
+                root.waveRetimer = _rand(5.0, 9.0);
             }
             var wApproach = 1.0 - Math.exp(-0.5 * dt);
             root.waveTurns += (root.tWaveTurns - root.waveTurns) * wApproach;
             root.waveTurns2 += (root.tWaveTurns2 - root.waveTurns2) * wApproach;
+            // Breadth roll: while quiet the ribbon can only ever re-roll
+            // narrow; a loud voice re-rolls wide as often as tight.
             root.burstTimer -= dt;
             if (root.burstTimer <= 0) {
-                root.burstW = _rand(0.3, 1.0);
-                root.burstTimer = _rand(0.6, 1.8);
+                root.burstW = _rand(0.25, 0.45 + 0.55 * root.gust);
+                root.burstTimer = _rand(0.7, 2.0);
             }
             // Quadratic pressure: whisper = sparse wisps, loud = full wave.
             var emitP = (!live || e < 0.06) ? 0.0 : Math.min(1.0, e * e * 2.0);
@@ -349,14 +362,16 @@ Item {
                     if (emitP > 0 && Math.random() < emitP * 0.9 * dt) {
                         p.alive = true;
                         p.t = 0.0;
-                        p.lane = _rand(-1, 1);
                         p.wf = _rand(0.35, 1.0);
+                        p.ng = _gauss();
+                        p.spd = _rand(0.7, 1.35);
+                        p.sz = _rand(0.3, 0.6);
                         p.b = 0.25 + 0.75 * Math.min(1, e * 1.8);
                     }
                 } else {
                     p.t += flowSpeed * p.spd * dt;
                     if (p.t >= 1.0) {
-                        p.t = 0.0;
+                        p.t = 1.0;
                         p.alive = false;
                     }
                 }
@@ -480,51 +495,125 @@ Item {
 
             // ---- Layer 3 · dictation spray (voice-emitted -> orbit) ----
             var st = root.stream;
-            var laneAmp = 1.5 + g * 2.0;
-            var wt = root.waveTurns;
-            var wt2 = root.waveTurns2;
-            var wSpeed = 1.6 + g * 1.4;
-            var wAmp = 2.5 + g * 13.0;
+            var TAU = 6.2831853;
+            var turns = root.waveTurns;
+            var turns2 = root.waveTurns2;
+            // Fast voice + slow gust, so crests flicker with syllables but
+            // the ribbon still breathes instead of jittering.
+            var eW = g * 0.6 + e * 0.4;
+            var travel = root.phase * (1.5 + g * 1.1);
+            // Breadth = intensity x a randomly re-rolled roll.
+            var breadth = 0.6 + 0.85 * root.burstW;
+            var amp = 3.0 + eW * 30.0 * breadth;
+            if (amp > 42) {
+                amp = 42;
+            }
+            var amp2 = amp * 0.22;
+            var spread = (1.2 + eW * 3.8) * (0.45 + 0.5 * root.burstW);
+
+            // Soft luminous core so the grain reads as one continuous wave.
+            if (om < 0.985) {
+                var ribA = (0.20 + 0.80 * g) * (1 - om);
+                if (ribA > 0.02) {
+                    var segs = 56;
+                    ctx.beginPath();
+                    for (var si = 0; si <= segs; si++) {
+                        var stt = si / segs;
+                        var rx = left + stt * root.fieldW;
+                        var ry = cy + Math.sin(stt * turns * TAU - travel) * amp
+                            + Math.sin(stt * turns2 * TAU - travel * 0.62) * amp2;
+                        if (si === 0) {
+                            ctx.moveTo(rx, ry);
+                        } else {
+                            ctx.lineTo(rx, ry);
+                        }
+                    }
+                    ctx.lineCap = "round";
+                    ctx.lineWidth = 8;
+                    ctx.strokeStyle = "rgba(255,255,255," + (ribA * 0.05).toFixed(3) + ")";
+                    ctx.stroke();
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = "rgba(255,255,255," + (ribA * 0.13).toFixed(3) + ")";
+                    ctx.stroke();
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = "rgba(255,255,255," + (ribA * 0.34).toFixed(3) + ")";
+                    ctx.stroke();
+                }
+            }
+
+            // Fine grain: every particle samples the shared sine and is
+            // scattered along the wave normal by its gaussian offset, so the
+            // spray piles onto the line and mists away from it. Collected
+            // into alpha buckets, then one fill per bucket.
+            var nb = 6;
+            var n = 0;
+            var shimmer = 0.35 + g * 0.7;
             for (i = 0; i < st.length; i++) {
                 p = st[i];
                 if (!p.alive) {
                     continue;
                 }
-                // Shared wave + shared chop, tiny fixed jitters only.
-                // Grows from the left: small at the source, blooming right.
-                // Randomly wide: burst width x per-particle width factor.
-                var grow = 0.3 + 0.7 * Math.min(1, p.t / 0.45);
-                var wave = (Math.sin(p.t * wt * 6.2832 - root.phase * wSpeed + Math.sin(p.ph) * 0.4) * wAmp
-                    + Math.sin(p.t * wt2 * 6.2832 - root.phase * wSpeed * 1.5 + Math.cos(p.ph * 1.3) * 0.5) * wAmp * 0.28) * grow;
-                var spray = 0.6 + g * 2.0;
-                var sx = left + p.t * root.fieldW
-                    + Math.sin(root.phase * 2.6 + p.ph * 2.1) * spray;
-                var effW = (0.4 + 0.6 * root.burstW) * p.wf;
-                var sy = cy + wave + p.lane * laneAmp * effW
-                    + Math.cos(root.phase * 1.7 + p.ph) * 1.2;
+                var tt = p.t;
+                var ph1 = tt * turns * TAU - travel + p.ph * 0.03;
+                var waveY = cy + Math.sin(ph1) * amp
+                    + Math.sin(tt * turns2 * TAU - travel * 0.62 + p.ph * 0.05) * amp2;
+                // Unit normal of the sine at this point; scatter along it.
+                var slope = Math.cos(ph1) * (amp * turns * TAU) / root.fieldW;
+                var inv = 1 / Math.sqrt(1 + slope * slope);
+                var off = p.ng * spread * (0.55 + p.wf * 0.45)
+                    + Math.sin(root.phase * 2.4 + p.ph * 3.1) * shimmer;
+                var sx2 = left + tt * root.fieldW
+                    + Math.sin(root.phase * 3.1 + p.ph * 2.0) * (0.5 + g * 1.2)
+                    - slope * inv * off;
+                var sy2 = waveY + inv * off;
                 ox = cx + Math.cos(p.a) * p.r * ringPx;
                 oy = cy + Math.sin(p.a) * p.r * ringPx * 0.92;
-                x = sx * (1 - om) + ox * om;
-                y = sy * (1 - om) + oy * om;
+                x = sx2 * (1 - om) + ox * om;
+                y = sy2 * (1 - om) + oy * om;
 
-                var endFade = Math.min(1, Math.min(p.t, 1 - p.t) / 0.07);
-                if (endFade < 0) {
-                    endFade = 0;
+                var env = Math.min(1, tt / 0.07) * Math.min(1, (1 - tt) / 0.12);
+                if (env < 0) {
+                    env = 0;
                 }
-                var headFade = Math.min(1, p.t / 0.06);
-                var sFade = (endFade * headFade) * (1 - om) + om;
-                size = p.sz * (1.0 + p.b * 0.9) * (0.95 + om * 0.2);
-                a = (0.30 + 0.60 * p.b + om * 0.12) * sFade;
-                if (a > 0.95) {
-                    a = 0.95;
+                env = env * (1 - om) + om;
+                // Bright core on the line, falloff into the mist.
+                var gcore = Math.exp(-(p.ng * p.ng) * 1.8);
+                var tw = 0.72 + 0.28 * Math.sin(root.phase * p.tw + p.ph);
+                a = (0.08 + 0.75 * gcore) * (0.5 + 0.5 * p.b) * tw * env * (1.0 - 0.3 * tt);
+                a *= (0.5 + 0.5 * g) * (1 - om) + om * 1.15;
+                if (a > 0.92) {
+                    a = 0.92;
                 }
-                if (a <= 0.015) {
+                if (a <= 0.02) {
                     continue;
                 }
-                // Single tone: one clean dot.
-                ctx.fillStyle = "rgba(255,255,255," + a.toFixed(3) + ")";
+                size = p.sz * (0.75 + gcore * 0.45) * (0.95 + om * 0.2);
+                if (size < 0.35) {
+                    size = 0.35;
+                }
+
+                sprayX[n] = x;
+                sprayY[n] = y;
+                sprayR[n] = size;
+                var bk = (a * nb) | 0;
+                sprayB[n] = bk >= nb ? nb - 1 : bk;
+                n++;
+            }
+            for (var bkt = 0; bkt < nb; bkt++) {
+                var any = false;
                 ctx.beginPath();
-                ctx.arc(x, y, size, 0, Math.PI * 2);
+                for (var j2 = 0; j2 < n; j2++) {
+                    if (sprayB[j2] !== bkt) {
+                        continue;
+                    }
+                    any = true;
+                    ctx.moveTo(sprayX[j2] + sprayR[j2], sprayY[j2]);
+                    ctx.arc(sprayX[j2], sprayY[j2], sprayR[j2], 0, TAU);
+                }
+                if (!any) {
+                    continue;
+                }
+                ctx.fillStyle = "rgba(255,255,255," + ((bkt + 0.5) / nb).toFixed(3) + ")";
                 ctx.fill();
             }
 
