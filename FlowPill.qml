@@ -1,25 +1,25 @@
 // Flow — effervescent particle field for Voxtype.
 //
-// No pill, no chrome — three layered particle systems floating above the
-// bottom edge:
+// No pill, no chrome — a dominant dictation wave over two subtle
+// atmospheric layers, floating above the bottom edge:
 //
-//   Layer 1 · AMBIENT — fine single-tone shimmer, always present. Small dim
-//     dots drifting upward with individual twinkle, even in silence.
+//   Layer 1 · AMBIENT — subtle single-tone shimmer, always present. Small
+//     dim dots drifting upward with individual twinkle, even in silence.
 //
-//   Layer 2 · INFLUX — effervescence bubbles, single toned. They well up
-//     from below with a wobble, live briefly, and dissolve. A light trickle
-//     always shimmers; speaking turns it into a rising fizz.
+//   Layer 2 · INFLUX — understated effervescence bubbles, single toned.
+//     They well up from below with a wobble, live briefly, and dissolve.
+//     A light trickle always shimmers; speaking turns it into a rising fizz.
 //
-//   Layer 3 · DICTATION — a spray of fine particles that only exists while
-//     you speak. Ultra-fine dust is emitted from the left by voice pressure,
-//     density proportional to dictation intensity (quiet = sparse wisps,
-//     loud = a dense wave), and drains out the right when dictation stops.
-//     Every grain rides the same traveling sine — fundamental plus a slow
-//     secondary swell — scattered along the wave normal with gaussian
-//     falloff, so the spray piles onto the line and mists outward. Both the
-//     wave amplitude and the mist breadth scale with dictation intensity
-//     and are re-rolled at random, so loud passages fan wide and restless
-//     while quiet ones collapse to a tight hairline. All single toned.
+//   Layer 3 · DICTATION — the dominant element: a spray of fine particles
+//     that only exists while you speak. Ultra-fine dust is emitted from the
+//     left by voice pressure, density proportional to dictation intensity
+//     (quiet = sparse wisps, loud = a dense wave), and drains out the right
+//     when dictation stops. Every grain rides the same traveling sine —
+//     fundamental plus a slow secondary swell — scattered along the wave
+//     normal with gaussian falloff, so the spray piles onto the line and
+//     mists outward. Amplitude, mist thickness, and grain size all scale
+//     with loudness and are re-rolled at random, so loud passages fan wide
+//     and thick while quiet ones collapse to a tight hairline. All single toned.
 //
 //   Processing (transcribing): influx + dictation collapse into a rotating
 //     ring; ambient dims but stays. Tiny timer below, nothing else.
@@ -354,13 +354,26 @@ Item {
                 root.burstW = _rand(0.25, 0.45 + 0.55 * root.gust);
                 root.burstTimer = _rand(0.7, 2.0);
             }
-            // Proportional pressure: particle density tracks dictation
-            // intensity (decibels) linearly — quiet = sparse wisps, loud = dense.
-            var emitP = (!live || e < 0.06) ? 0.0 : Math.min(1.0, e * 1.2);
+            // Density proportional to loudness: the alive fraction of the
+            // pool tracks voice energy, so quiet dictation is a sparse spray
+            // and loud dictation a dense one. Emission tops up toward the
+            // target; excess grains are recycled, weighted toward the drain
+            // end so the tail recedes instead of popping mid-flight. When
+            // dictation stops, no recycling — the wave drains naturally.
+            var density = (live && e >= 0.06) ? Math.min(1, e) : 0;
+            var target = Math.floor(st.length * density);
+            var aliveCount = 0;
+            for (i = 0; i < st.length; i++) {
+                if (st[i].alive) {
+                    aliveCount++;
+                }
+            }
+            var emitP = density > 0 ? 3.0 : 0.0;
+            var killP = (density > 0 && aliveCount > target) ? 2.0 : 0.0;
             for (i = 0; i < st.length; i++) {
                 p = st[i];
                 if (!p.alive) {
-                    if (emitP > 0 && Math.random() < emitP * 0.9 * dt) {
+                    if (aliveCount < target && Math.random() < emitP * dt) {
                         p.alive = true;
                         p.t = 0.0;
                         p.wf = _rand(0.35, 1.0);
@@ -368,12 +381,20 @@ Item {
                         p.spd = _rand(0.7, 1.35);
                         p.sz = _rand(0.3, 0.6);
                         p.b = 0.25 + 0.75 * Math.min(1, e * 1.8);
+                        aliveCount++;
                     }
                 } else {
-                    p.t += flowSpeed * p.spd * dt;
-                    if (p.t >= 1.0) {
-                        p.t = 1.0;
+                    if (killP > 0 && Math.random() < killP * (0.5 + p.t) * dt) {
                         p.alive = false;
+                        p.t = 1.0;
+                        aliveCount--;
+                    } else {
+                        p.t += flowSpeed * p.spd * dt;
+                        if (p.t >= 1.0) {
+                            p.t = 1.0;
+                            p.alive = false;
+                            aliveCount--;
+                        }
                     }
                 }
 
@@ -430,7 +451,7 @@ Item {
 
             // Faint neutral halo so particles read on any background.
             var haloR = root.fieldW * (0.42 + g * 0.08 + om * 0.04);
-            var haloA = 0.06 + g * 0.08 + om * 0.04;
+            var haloA = 0.07 + g * 0.10 + om * 0.04;
             var hg = ctx.createRadialGradient(cx, cy, 4, cx, cy, haloR);
             hg.addColorStop(0.0, "rgba(255,255,255," + (haloA * 0.5).toFixed(3) + ")");
             hg.addColorStop(0.55, "rgba(255,255,255," + (haloA * 0.18).toFixed(3) + ")");
@@ -450,11 +471,11 @@ Item {
                 y = cy - root.fieldH / 2 + p.y * root.fieldH
                     + Math.cos(root.phase * 0.5 + p.ph) * 2.0;
                 var tw = 0.55 + 0.45 * Math.sin(root.phase * p.tw + p.ph);
-                a = (0.08 + 0.13 * tw + g * 0.08) * ambDim;
+                a = (0.035 + 0.06 * tw + g * 0.03) * ambDim;
                 if (a <= 0.015) {
                     continue;
                 }
-                size = p.sz * (1.0 + g * 0.4);
+                size = p.sz * (0.9 + g * 0.2);
                 // Single tone: one fine dot, no halo pass.
                 ctx.fillStyle = "rgba(255,255,255," + a.toFixed(3) + ")";
                 ctx.beginPath();
@@ -479,8 +500,8 @@ Item {
                 x = bx * (1 - om) + ox * om;
                 y = by * (1 - om) + oy * om;
                 // Bubbles swell as they rise, shrink as they dissolve.
-                var bs = p.sz * (0.8 + env * 0.9) * (1.0 + g * 0.7);
-                a = (0.30 + 0.55 * Math.min(1, g * 1.5 + 0.15) + om * 0.15) * (env * (1 - om) + om);
+                var bs = p.sz * (0.7 + env * 0.7) * (0.9 + g * 0.4);
+                a = (0.14 + 0.30 * Math.min(1, g * 1.5 + 0.15) + om * 0.15) * (env * (1 - om) + om);
                 if (a > 0.95) {
                     a = 0.95;
                 }
@@ -505,12 +526,12 @@ Item {
             var travel = root.phase * (1.5 + g * 1.1);
             // Breadth = intensity x a randomly re-rolled roll.
             var breadth = 0.6 + 0.85 * root.burstW;
-            var amp = 3.0 + eW * 30.0 * breadth;
-            if (amp > 42) {
-                amp = 42;
+            var amp = 4.0 + eW * 42.0 * breadth;
+            if (amp > 58) {
+                amp = 58;
             }
             var amp2 = amp * 0.22;
-            var spread = (1.7 + eW * 5.5) * (0.45 + 0.55 * root.burstW);
+            var spread = (1.5 + eW * 9.0) * (0.4 + 0.6 * root.burstW);
 
             // Fine grain: every particle samples the shared sine and is
             // scattered along the wave normal by its gaussian offset, so the
@@ -550,7 +571,7 @@ Item {
                 // Bright core on the line, falloff into the mist.
                 var gcore = Math.exp(-(p.ng * p.ng) * 2.2);
                 var tw = 0.72 + 0.28 * Math.sin(root.phase * p.tw + p.ph);
-                a = (0.05 + 0.78 * gcore) * (0.5 + 0.5 * p.b) * tw * env * (1.0 - 0.3 * tt);
+                a = (0.07 + 0.82 * gcore) * (0.5 + 0.5 * p.b) * tw * env * (1.0 - 0.3 * tt);
                 a *= (0.5 + 0.5 * g) * (1 - om) + om * 1.15;
                 if (a > 0.92) {
                     a = 0.92;
@@ -558,7 +579,7 @@ Item {
                 if (a <= 0.02) {
                     continue;
                 }
-                size = p.sz * (0.75 + gcore * 0.45) * (0.95 + om * 0.2);
+                size = p.sz * (0.75 + gcore * 0.45) * (0.8 + eW * 0.5) * (0.95 + om * 0.2);
                 if (size < 0.35) {
                     size = 0.35;
                 }
