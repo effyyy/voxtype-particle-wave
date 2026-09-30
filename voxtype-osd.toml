@@ -1,0 +1,34 @@
+name = "flow"
+version = "1.0.0"
+description = "Effervescent particle field: ambient shimmer + influx fizz + randomized dictation waves, orbiting ring while processing, tiny timer below."
+compatibility = "voxtype quickshell style packages"
+palette = "package"
+layout = "custom"
+qml_entry = "FlowPill.qml"
+
+[colors]
+accent = "#E8E8EC"
+background = "rgba(10, 10, 15, 0.32)"
+surface = "rgba(18, 18, 26, 0.35)"
+foreground = "#F5F5F7"
+muted = "rgba(235, 235, 245, 0.55)"
+success = "#3DDC84"
+warning = "#FFB84A"
+error = "#FF4D6D"
+recording = "#FF4D6D"
+streaming = "#5AA9FF"
+transcribing = "#FFB84A"
+idle = "rgba(235, 235, 245, 0.60)"
+
+[frame]
+background = "none"
+border = "none"
+glow = false
+halo = false
+
+[[visual.layers]]
+type = "waveform"
+source = "peak"
+color = "accent"
+order = 10
+gain = 3.0
