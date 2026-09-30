@@ -10,16 +10,16 @@
 //     from below with a wobble, live briefly, and dissolve. A light trickle
 //     always shimmers; speaking turns it into a rising fizz.
 //
-//   Layer 3 · DICTATION — a fine-particle spray that only exists while you
-//     speak. Ultra-fine dust is emitted from the left by voice pressure
-//     (quadratic, so quiet = sparse wisps, loud = a full wide wave) and
-//     drains out the right when dictation stops. Every grain rides the same
-//     traveling sine — a soft glowing ribbon with a slow secondary swell —
-//     scattered along the wave normal with gaussian falloff, so the spray
-//     sits dense on the line and mists outward. Both the ribbon amplitude
-//     and the mist breadth scale with dictation intensity and are re-rolled
-//     at random, so loud passages fan wide and restless while quiet ones
-//     collapse to a tight hairline. All single toned.
+//   Layer 3 · DICTATION — a spray of fine particles that only exists while
+//     you speak. Ultra-fine dust is emitted from the left by voice pressure,
+//     density proportional to dictation intensity (quiet = sparse wisps,
+//     loud = a dense wave), and drains out the right when dictation stops.
+//     Every grain rides the same traveling sine — fundamental plus a slow
+//     secondary swell — scattered along the wave normal with gaussian
+//     falloff, so the spray piles onto the line and mists outward. Both the
+//     wave amplitude and the mist breadth scale with dictation intensity
+//     and are re-rolled at random, so loud passages fan wide and restless
+//     while quiet ones collapse to a tight hairline. All single toned.
 //
 //   Processing (transcribing): influx + dictation collapse into a rotating
 //     ring; ambient dims but stays. Tiny timer below, nothing else.
@@ -74,7 +74,7 @@ Item {
 
     readonly property int ambientCount: 38
     readonly property int influxCount: 50
-    readonly property int streamCount: 560
+    readonly property int streamCount: 820
     readonly property real fieldW: 320
     readonly property real fieldH: 64
 
@@ -354,8 +354,9 @@ Item {
                 root.burstW = _rand(0.25, 0.45 + 0.55 * root.gust);
                 root.burstTimer = _rand(0.7, 2.0);
             }
-            // Quadratic pressure: whisper = sparse wisps, loud = full wave.
-            var emitP = (!live || e < 0.06) ? 0.0 : Math.min(1.0, e * e * 2.0);
+            // Proportional pressure: particle density tracks dictation
+            // intensity (decibels) linearly — quiet = sparse wisps, loud = dense.
+            var emitP = (!live || e < 0.06) ? 0.0 : Math.min(1.0, e * 1.2);
             for (i = 0; i < st.length; i++) {
                 p = st[i];
                 if (!p.alive) {
@@ -499,7 +500,7 @@ Item {
             var turns = root.waveTurns;
             var turns2 = root.waveTurns2;
             // Fast voice + slow gust, so crests flicker with syllables but
-            // the ribbon still breathes instead of jittering.
+            // the wave still breathes instead of jittering.
             var eW = g * 0.6 + e * 0.4;
             var travel = root.phase * (1.5 + g * 1.1);
             // Breadth = intensity x a randomly re-rolled roll.
@@ -509,43 +510,13 @@ Item {
                 amp = 42;
             }
             var amp2 = amp * 0.22;
-            var spread = (1.2 + eW * 3.8) * (0.45 + 0.5 * root.burstW);
-
-            // Soft luminous core so the grain reads as one continuous wave.
-            if (om < 0.985) {
-                var ribA = (0.20 + 0.80 * g) * (1 - om);
-                if (ribA > 0.02) {
-                    var segs = 56;
-                    ctx.beginPath();
-                    for (var si = 0; si <= segs; si++) {
-                        var stt = si / segs;
-                        var rx = left + stt * root.fieldW;
-                        var ry = cy + Math.sin(stt * turns * TAU - travel) * amp
-                            + Math.sin(stt * turns2 * TAU - travel * 0.62) * amp2;
-                        if (si === 0) {
-                            ctx.moveTo(rx, ry);
-                        } else {
-                            ctx.lineTo(rx, ry);
-                        }
-                    }
-                    ctx.lineCap = "round";
-                    ctx.lineWidth = 8;
-                    ctx.strokeStyle = "rgba(255,255,255," + (ribA * 0.05).toFixed(3) + ")";
-                    ctx.stroke();
-                    ctx.lineWidth = 3;
-                    ctx.strokeStyle = "rgba(255,255,255," + (ribA * 0.13).toFixed(3) + ")";
-                    ctx.stroke();
-                    ctx.lineWidth = 1;
-                    ctx.strokeStyle = "rgba(255,255,255," + (ribA * 0.34).toFixed(3) + ")";
-                    ctx.stroke();
-                }
-            }
+            var spread = (1.7 + eW * 5.5) * (0.45 + 0.55 * root.burstW);
 
             // Fine grain: every particle samples the shared sine and is
             // scattered along the wave normal by its gaussian offset, so the
             // spray piles onto the line and mists away from it. Collected
             // into alpha buckets, then one fill per bucket.
-            var nb = 6;
+            var nb = 8;
             var n = 0;
             var shimmer = 0.35 + g * 0.7;
             for (i = 0; i < st.length; i++) {
@@ -577,9 +548,9 @@ Item {
                 }
                 env = env * (1 - om) + om;
                 // Bright core on the line, falloff into the mist.
-                var gcore = Math.exp(-(p.ng * p.ng) * 1.8);
+                var gcore = Math.exp(-(p.ng * p.ng) * 2.2);
                 var tw = 0.72 + 0.28 * Math.sin(root.phase * p.tw + p.ph);
-                a = (0.08 + 0.75 * gcore) * (0.5 + 0.5 * p.b) * tw * env * (1.0 - 0.3 * tt);
+                a = (0.05 + 0.78 * gcore) * (0.5 + 0.5 * p.b) * tw * env * (1.0 - 0.3 * tt);
                 a *= (0.5 + 0.5 * g) * (1 - om) + om * 1.15;
                 if (a > 0.92) {
                     a = 0.92;

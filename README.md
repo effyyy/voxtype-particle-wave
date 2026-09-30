@@ -12,7 +12,7 @@ Three layered, monochrome, single-tone particle systems on a 60 fps canvas:
 | --- | --- |
 | **Ambient** (38) | Fine shimmer, always present. Tiny dim dots drifting upward with individual twinkle, even in silence. |
 | **Influx** (50) | Effervescence bubbles. Well up from below with a wobble, swell as they rise, dissolve at the top. A trickle at rest, a fizz while speaking. |
-| **Dictation spray** (560) | Exists **only while you speak**. Voice pressure emits ultra-fine dust from the left edge (quadratic — whisper gives wisps, loud gives the full wide wave). Every grain rides one shared traveling sine — a soft luminous ribbon with a slow secondary swell — scattered along the wave normal with gaussian falloff, so the spray piles onto the line and mists outward. The wave's breadth re-rolls every couple of seconds and widens with your intensity: narrow and tense when you whisper, wide and lush when you project. Drains out the right when you stop. |
+| **Dictation spray** (820) | Exists **only while you speak**. A spray of ultra-fine particles is emitted from the left edge, density proportional to dictation intensity (decibels) — quiet gives sparse wisps, loud a dense wave. Every grain rides one shared traveling sine — fundamental plus a slow secondary swell — scattered along the wave normal with gaussian falloff, so the spray piles onto the line and mists outward. The wave's breadth re-rolls every couple of seconds and widens with your intensity: narrow and tense when you whisper, wide and lush when you project. Drains out the right when you stop. |
 
 While the model transcribes, influx + spray collapse into a rotating ring
 with a hairline orbit guide. A tiny monospace timer sits below the field.
