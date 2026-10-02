@@ -6,13 +6,14 @@ particle field floating above the bottom edge, with a tiny timer below.
 
 ## What it looks like
 
-Three layered, monochrome, single-tone particle systems on a 60 fps canvas:
+Aurora — a sculpted sine ribbon wrapped in translucent silk on a 60 fps
+canvas, with a fine stellar spray that ignites only while you speak:
 
 | Layer | Behavior |
 | --- | --- |
-| **Ambient** (38) | Subtle shimmer, always present. Tiny dim dots drifting upward with individual twinkle, even in silence. |
-| **Influx** (50) | Understated effervescence bubbles. Well up from below with a wobble, swell as they rise, dissolve at the top. A trickle at rest, a fizz while speaking. |
-| **Dictation spray** (820) | The dominant element. Exists **only while you speak**. Fine particles emit from the screen's left edge and travel across the viewport along a gently undulating spine. The plume opens downstream like a perfume mist; voice intensity controls particle density, fan width, and travel speed. It drains out the right when you stop. |
+| **Starfield** (90) | Cosmic dust and stars, always present. Tiny points of light in nebula colors drifting slowly with individual twinkle, even in silence. |
+| **Influx** (140) | Effervescent cosmic bubbles in teal and purple. Well up from below with a wobble, swell as they rise, dissolve at the top. A trickle at rest, a fizz while speaking. |
+| **Aurora ribbon + stellar spray** (900) | The dominant element. A pearl-bright twin-core ribbon flows violet → turquoise along one sculpted sine spine. A river of fine star-grains flows through it **only while you speak** — voice intensity controls spray density, fan width, and travel speed. It drains out the right when you stop. Rare gold/pink glints sparkle among the violet-ice-teal grains. |
 
 While the model transcribes, influx + spray collapse into a rotating ring
 with a hairline orbit guide. A tiny monospace timer sits below the field.
@@ -34,7 +35,7 @@ All knobs live in `FlowPill.qml`:
 
 - Counts: `ambientCount`, `influxCount`, `streamCount`
 - Star/orbit field size: `fieldW`, `fieldH`
-- Spray height: `amp` and `spread` in the layer-3 draw block
+- Ribbon height: `amp` / `amp2` and spine turns `waveTurns` / `waveTurns2` in the layer-3 draw block
 - Wave travel speed: `travel` in the layer-3 draw block
 - Spray width and aggressiveness: `eW` in the layer-3 draw block; grain size via the particle `sz` ranges
 - Density: alive-fraction governance in the engine (`target = pool × voiceEnergy`, proportional to loudness)

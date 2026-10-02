@@ -1,7 +1,10 @@
-// Flow — cosmic particle field for Voxtype.
+// Flow — Aurora cosmic particle field for Voxtype.
 //
-// A dominant dictation wave over atmospheric layers, floating above the
-// bottom edge with a deep-space aesthetic:
+// Aurora: a single sculpted sine ribbon wrapped in translucent silk,
+// with a pearl-bright center carrying the voice (violet → turquoise).
+// A fine stellar spray flows through the ribbon only while you speak:
+// density, fan width and travel speed follow voice loudness, draining
+// out the right when you stop. Sparse cosmic dust drifts around it.
 //
 //   Layer 1 · STARFIELD — cosmic dust and stars, always present. Tiny
 //     points of light in nebula colors drifting slowly with twinkle.
@@ -9,12 +12,11 @@
 //   Layer 2 · INFLUX — effervescent cosmic bubbles in teal and purple.
 //     They well up from below with a wobble, live briefly, and dissolve.
 //
-//   Layer 3 · DICTATION — the dominant element: a multi-layered spray of
-//     fine particles in cosmic colors (purple, blue, teal, pink, gold).
-//     Three overlapping sine waves create a rich, nebula-like ribbon.
-//     Density proportional to voice loudness.
+//   Layer 3 · AURORA — the dominant element: one luminous ribbon +
+//     fine-particle stellar spray in cosmic colors. Voice-gated:
+//     silence shows the calm ribbon, speech ignites the spray.
 //
-//   Processing (transcribing): influx + dictation collapse into a
+//   Processing (transcribing): influx + spray collapse into a
 //     rotating cosmic orbit ring with colored particles.
 //
 // The host (OsdSurface.qml) loads this fullscreen and hides the whole window
@@ -44,6 +46,7 @@ Item {
     property real phase: 0.0
     property real orbitMix: 0.0
     property real lastTickMs: Date.now()
+    property int idleTick: 0
     property real recordStartMs: 0
     property string elapsedText: "0:00"
 
@@ -67,7 +70,9 @@ Item {
 
     readonly property int ambientCount: 90
     readonly property int influxCount: 140
-    readonly property int streamCount: 3200
+    // Fine stellar spray through the Aurora ribbon. 900 tiny grains are
+    // plenty for a 320px field and stay cheap for 60fps QML Canvas.
+    readonly property int streamCount: 900
     readonly property real fieldW: 320
     readonly property real fieldH: 64
 
@@ -88,11 +93,13 @@ Item {
     ]
     readonly property int colorCount: 12
 
-    // Shared traveling-wave state (layer 3)
-    property real waveTurns: 1.8
-    property real tWaveTurns: 1.8
-    property real waveTurns2: 3.4
-    property real tWaveTurns2: 3.4
+    // Shared traveling-wave state (layer 3 · Aurora spine).
+    // Primary ~1.55 turns + secondary ~3.2 shimmer, matching the Aurora
+    // study: sin(u*1.55*TAU - t*1.7) * (8+e*11) * env + sin(u*3.2*TAU…)*2.5*env.
+    property real waveTurns: 1.55
+    property real tWaveTurns: 1.55
+    property real waveTurns2: 3.2
+    property real tWaveTurns2: 3.2
     property real waveTurns3: 5.2
     property real tWaveTurns3: 5.2
     property real waveRetimer: 0.0
@@ -287,6 +294,15 @@ Item {
             var now = Date.now();
             var dt = Math.min(0.06, Math.max(0.001, (now - root.lastTickMs) / 1000.0));
             root.lastTickMs = now;
+            // Idle: the canvas is invisible (opacity 0), so halve the physics
+            // rate and skip repaint entirely instead of clearing every frame.
+            if (!root.active) {
+                root.idleTick = (root.idleTick + 1) % 2;
+                if (root.idleTick !== 0) {
+                    return;
+                }
+                dt = Math.min(0.06, dt * 2);
+            }
             root.phase += dt;
 
             var live = root.active && !root.isThinking;
@@ -342,13 +358,15 @@ Item {
                 p.r += (ringR * p.rf - p.r) * amount;
             }
 
-            // Layer 3: dictation spray
+            // Layer 3: Aurora stellar spray (voice-gated fine particles)
             var st = root.stream;
             var flowSpeed = 0.12 + e * 0.42;
             root.waveRetimer -= dt;
             if (root.waveRetimer <= 0) {
-                root.tWaveTurns = _rand(1.2, 2.0);
-                root.tWaveTurns2 = _rand(2.6, 3.8);
+                // Slow morph around the Aurora spine frequencies so the
+                // ribbon feels alive without losing its sculpted shape.
+                root.tWaveTurns = _rand(1.35, 1.75);
+                root.tWaveTurns2 = _rand(2.9, 3.5);
                 root.tWaveTurns3 = _rand(4.5, 6.0);
                 root.waveRetimer = _rand(5.0, 9.0);
             }
@@ -380,7 +398,8 @@ Item {
                         p.wf = _rand(0.35, 1.0);
                         p.ng = _gauss();
                         p.spd = _rand(0.7, 1.35);
-                        p.sz = _rand(0.25, 0.65);
+                        // Fine stellar grain: sub-pixel to ~1px dots.
+                        p.sz = _rand(0.28, 0.72);
                         p.b = 0.25 + 0.75 * Math.min(1, e * 1.8);
                         p.ci = Math.floor(Math.random() * root.colorCount);
                         p.strand = Math.floor(Math.random() * 18);
@@ -406,7 +425,9 @@ Item {
                 var am2 = 1.0 - Math.exp(-3.0 * dt);
                 p.r += (rr * p.rf - p.r) * am2;
             }
-            particleCanvas.requestPaint();
+            if (root.active) {
+                particleCanvas.requestPaint();
+            }
         }
     }
 
@@ -434,7 +455,6 @@ Item {
         antialiasing: true
 
         Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-        Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
 
         onPaint: {
             var ctx = getContext("2d");
@@ -526,39 +546,135 @@ Item {
                 if (a <= 0.015) {
                     continue;
                 }
-                // Glow pass for larger bubbles
-                if (bs > 1.0 && a > 0.15) {
-                    var glowR = bs * 3.0;
-                    var bhg = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-                    bhg.addColorStop(0, "rgba(" + (cr * 255 | 0) + "," + (cg * 255 | 0) + "," + (cb * 255 | 0) + "," + (a * 0.25).toFixed(3) + ")");
-                    bhg.addColorStop(1, "rgba(" + (cr * 255 | 0) + "," + (cg * 255 | 0) + "," + (cb * 255 | 0) + ",0)");
-                    ctx.fillStyle = bhg;
-                    ctx.beginPath();
-                    ctx.arc(x, y, glowR, 0, TAU);
-                    ctx.fill();
-                }
                 ctx.fillStyle = "rgba(" + (cr * 255 | 0) + "," + (cg * 255 | 0) + "," + (cb * 255 | 0) + "," + a.toFixed(3) + ")";
                 ctx.beginPath();
                 ctx.arc(x, y, bs, 0, TAU);
                 ctx.fill();
             }
 
-            // ---- Layer 3 · cosmic dictation wave (dense parallel strands) ----
+            // ---- Layer 3 · Aurora ribbon + fine stellar spray ----
+            // One sculpted sine ribbon (violet -> turquoise silk, pearl core)
+            // with a voice-gated river of fine stars flowing through it.
             var st = root.stream;
             var turns = root.waveTurns;
             var turns2 = root.waveTurns2;
             var eW = g * 0.6 + e * 0.4;
-            var travel = root.phase * (1.5 + g * 1.1);
-            var breadth = 0.6 + 0.85 * root.burstW;
-            var amp = 5.0 + eW * 48.0 * breadth;
-            if (amp > 64) {
-                amp = 64;
+            var travel = root.phase * (1.7 + g * 0.6);
+            var breadth = 0.85 + 0.3 * root.burstW;
+            var amp = (8.0 + eW * 11.0) * breadth;
+            if (amp > 26) {
+                amp = 26;
             }
-            var amp2 = amp * 0.22;
-            var strandCount = 18;
-            var strandSpacing = 5.5 + eW * 4.0;
+            var amp2 = 2.5 * (0.7 + 0.6 * Math.min(1, eW + 0.2));
+            // The ribbon stays visible during transcribe (dimmed, calm) —
+            // only the spray collapses into the orbit ring.
+            var vis = 1 - om * 0.65;
 
-            var nb = 8;
+            function auroraEnv(u) {
+                if (u <= 0 || u >= 1) {
+                    return 0;
+                }
+                return Math.pow(Math.sin(Math.PI * u), 0.8);
+            }
+            function auroraSpine(u) {
+                var env = auroraEnv(u);
+                return Math.sin(u * turns * TAU - travel) * amp * env
+                    + Math.sin(u * turns2 * TAU - travel * 0.55) * amp2 * env;
+            }
+            // One gradient per frame; per-element fade via globalAlpha.
+            // (Per-stroke gradients + shadowBlur were the frame stutter.)
+            var auroraGrad = ctx.createLinearGradient(left, 0, left + root.fieldW, 0);
+            auroraGrad.addColorStop(0, "rgba(163,111,255,0.15)");
+            auroraGrad.addColorStop(0.18, "rgba(164,122,255,1)");
+            auroraGrad.addColorStop(0.45, "rgba(201,188,255,1)");
+            auroraGrad.addColorStop(0.65, "rgba(105,225,238,1)");
+            auroraGrad.addColorStop(0.85, "rgba(64,210,194,1)");
+            auroraGrad.addColorStop(1, "rgba(64,210,194,0)");
+            var SEG = 120;
+            function auroraStroke(fn, w, alpha) {
+                if (alpha <= 0.01) {
+                    return;
+                }
+                ctx.beginPath();
+                for (var si = 0; si <= SEG; si++) {
+                    var uu = si / SEG;
+                    var xx = left + uu * root.fieldW;
+                    var yy = cy + fn(uu);
+                    if (si === 0) {
+                        ctx.moveTo(xx, yy);
+                    } else {
+                        ctx.lineTo(xx, yy);
+                    }
+                }
+                ctx.lineWidth = w;
+                ctx.strokeStyle = auroraGrad;
+                ctx.globalAlpha = alpha;
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+
+            if (vis > 0.02) {
+                // Layered wide strokes fake the outer glow (no shadowBlur).
+                auroraStroke(auroraSpine, 15 + eW * 8, 0.10 * vis);
+                auroraStroke(auroraSpine, 8 + eW * 4, 0.14 * vis);
+                // Translucent silk body.
+                var ribW = 3.5 + eW * 2.3;
+                ctx.beginPath();
+                var ri;
+                for (ri = 0; ri <= SEG; ri++) {
+                    var ru = ri / SEG;
+                    var ry = cy + auroraSpine(ru) - ribW * auroraEnv(ru);
+                    if (ri === 0) {
+                        ctx.moveTo(left + ru * root.fieldW, ry);
+                    } else {
+                        ctx.lineTo(left + ru * root.fieldW, ry);
+                    }
+                }
+                for (ri = SEG; ri >= 0; ri--) {
+                    var ru2 = ri / SEG;
+                    ctx.lineTo(left + ru2 * root.fieldW, cy + auroraSpine(ru2) + ribW * auroraEnv(ru2));
+                }
+                ctx.closePath();
+                ctx.fillStyle = auroraGrad;
+                ctx.globalAlpha = 0.42 * vis;
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                // Silky edge filaments drifting along the ribbon.
+                for (var fj = -3; fj <= 3; fj++) {
+                    var fh = fj / 3;
+                    auroraStroke(function (u) {
+                        var env = auroraEnv(u);
+                        return auroraSpine(u) + fh * (3.8 + eW * 3) * env
+                            + Math.sin(u * TAU * 2 - travel * 0.75 + fh) * env * 1.6;
+                    }, 0.6, 0.30 * vis);
+                }
+                // Luminous twin cores + pearl-bright highlight.
+                auroraStroke(auroraSpine, 2.2, 0.95 * vis);
+                auroraStroke(function (u) {
+                    return auroraSpine(u) + Math.sin(u * TAU * 2 - travel) * 0.7 * auroraEnv(u);
+                }, 0.85, 0.9 * vis);
+                ctx.beginPath();
+                for (var pi2 = 0; pi2 <= SEG; pi2++) {
+                    var pu = pi2 / SEG;
+                    var py = cy + auroraSpine(pu) - 0.7 * auroraEnv(pu);
+                    if (pi2 === 0) {
+                        ctx.moveTo(left + pu * root.fieldW, py);
+                    } else {
+                        ctx.lineTo(left + pu * root.fieldW, py);
+                    }
+                }
+                ctx.lineWidth = 0.65;
+                ctx.strokeStyle = "rgba(237,244,255,1)";
+                ctx.globalAlpha = 0.88 * vis;
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+
+            // Fine stellar spray: lives only while speaking, flows left to
+            // right along the spine, drains out the right on silence.
+            // 4 alpha buckets x 5 color groups = 20 fills (was 96).
+            var sprayPalette = ["168,124,255", "201,188,255", "90,220,210", "255,190,60", "255,95,165"];
+            var nb = 4;
             var n = 0;
             for (i = 0; i < st.length; i++) {
                 p = st[i];
@@ -566,20 +682,16 @@ Item {
                     continue;
                 }
                 var tt = p.t;
-                var strandIdx = p.strand % strandCount;
-                var strandOff = (strandIdx - strandCount / 2 + 0.5) * strandSpacing;
-                var ph1 = tt * turns * TAU - travel + strandOff * 0.06;
-                var ph2 = tt * turns2 * TAU - travel * 0.62 + strandOff * 0.04;
-                var waveY = cy + Math.sin(ph1) * amp
-                    + Math.sin(ph2) * amp2
-                    + strandOff;
-                var slope = Math.cos(ph1) * (amp * turns * TAU) / root.fieldW
-                    + Math.cos(ph2) * (amp2 * turns2 * TAU) / root.fieldW;
+                var senv = auroraEnv(tt);
+                var baseY = cy + auroraSpine(tt);
+                var c1 = Math.cos(tt * turns * TAU - travel);
+                var c2 = Math.cos(tt * turns2 * TAU - travel * 0.55);
+                var slope = (c1 * amp * turns * TAU + c2 * amp2 * turns2 * TAU) / root.fieldW * Math.max(0.15, senv);
                 var inv = 1 / Math.sqrt(1 + slope * slope);
-                var off = p.ng * 1.2 * (0.5 + p.wf * 0.3)
+                var off = p.ng * (2.2 + eW * 5.0) * (0.5 + p.wf * 0.5)
                     + Math.sin(root.phase * 2.0 + p.ph * 2.5) * 0.4;
                 var sx2 = left + tt * root.fieldW - slope * inv * off;
-                var sy2 = waveY + inv * off;
+                var sy2 = baseY + inv * off;
                 ox = cx + Math.cos(p.a) * p.r * ringPx;
                 oy = cy + Math.sin(p.a) * p.r * ringPx * 0.92;
                 x = sx2 * (1 - om) + ox * om;
@@ -593,7 +705,7 @@ Item {
                 var gcore = Math.exp(-(p.ng * p.ng) * 3.5);
                 var ptw = 0.75 + 0.25 * Math.sin(root.phase * p.tw + p.ph);
                 a = (0.10 + 0.75 * gcore) * (0.5 + 0.5 * p.b) * ptw * tenv * (1.0 - 0.2 * tt);
-                a *= (0.5 + 0.5 * g) * (1 - om) + om * 1.15;
+                a *= (0.35 + 0.65 * g) * (1 - om) + om * 1.15;
                 if (a > 0.92) {
                     a = 0.92;
                 }
@@ -608,15 +720,29 @@ Item {
                 sprayX[n] = x;
                 sprayY[n] = y;
                 sprayR[n] = size;
-                sprayC[n] = p.ci;
+                // Stellar tint follows the ribbon: violet left, ice middle,
+                // teal right — with rare gold/rose glints.
+                var colIdx;
+                if (p.ci === 4) {
+                    colIdx = 3;
+                } else if (p.ci === 10) {
+                    colIdx = 4;
+                } else if (tt < 0.38) {
+                    colIdx = 0;
+                } else if (tt < 0.65) {
+                    colIdx = 1;
+                } else {
+                    colIdx = 2;
+                }
+                sprayC[n] = colIdx;
                 var bk = (a * nb) | 0;
                 sprayB[n] = bk >= nb ? nb - 1 : bk;
                 n++;
             }
 
-            // Draw spray batched by alpha bucket, colored per particle
+            // Draw spray batched by alpha bucket and color group
             for (var bkt = 0; bkt < nb; bkt++) {
-                for (var cIdx = 0; cIdx < root.colorCount; cIdx++) {
+                for (var cIdx = 0; cIdx < 5; cIdx++) {
                     var anyC = false;
                     ctx.beginPath();
                     for (var j2 = 0; j2 < n; j2++) {
@@ -630,59 +756,50 @@ Item {
                     if (!anyC) {
                         continue;
                     }
-                    var cc = root.cosmicColors[cIdx];
-                    ctx.fillStyle = "rgba(" + (cc[0] * 255 | 0) + "," + (cc[1] * 255 | 0) + "," + (cc[2] * 255 | 0) + "," + ((bkt + 0.5) / nb).toFixed(3) + ")";
+                    ctx.fillStyle = "rgba(" + sprayPalette[cIdx] + "," + ((bkt + 0.5) / nb).toFixed(3) + ")";
                     ctx.fill();
                 }
             }
 
-            // Bright core pass — white-hot center on the wave spine
+            // Pearl shimmer pass — grains near the spine, two batched fills
+            // under additive blending (no per-grain gradients).
             if (om < 0.5) {
                 ctx.globalCompositeOperation = "lighter";
-                var coreN = 0;
-                for (i = 0; i < st.length; i++) {
-                    p = st[i];
-                    if (!p.alive) {
-                        continue;
-                    }
-                    var ctt = p.t;
-                    if (Math.abs(p.ng) > 0.6) {
-                        continue;
-                    }
-                    var cStrandIdx = p.strand % 18;
-                    var cStrandOff = (cStrandIdx - 18 / 2 + 0.5) * (5.5 + eW * 4.0);
-                    var cph = ctt * turns * TAU - travel + cStrandOff * 0.06;
-                    var cwaveY = cy + Math.sin(cph) * amp
-                        + Math.sin(ctt * turns2 * TAU - travel * 0.62 + cStrandOff * 0.04) * amp2
-                        + cStrandOff;
-                    var cslope = Math.cos(cph) * (amp * turns * TAU) / root.fieldW;
-                    var cinv = 1 / Math.sqrt(1 + cslope * cslope);
-                    var coff = p.ng * spread * 0.3
-                        + Math.sin(root.phase * 2.4 + p.ph * 3.1) * shimmer * 0.3;
-                    var cx2 = left + ctt * root.fieldW - cslope * cinv * coff;
-                    var cy2 = cwaveY + cinv * coff;
-                    var cenv = Math.min(1, ctt / 0.07) * Math.min(1, (1 - ctt) / 0.12);
-                    if (cenv < 0) {
-                        cenv = 0;
-                    }
-                    var ca = 0.35 * cenv * (1 - om) * (0.5 + 0.5 * g);
-                    if (ca <= 0.03) {
-                        continue;
-                    }
-                    var csz = p.sz * 0.6 * (0.8 + eW * 0.4);
-                    if (csz < 0.2) {
-                        csz = 0.2;
-                    }
-                    var cglow = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, csz * 4);
-                    cglow.addColorStop(0, "rgba(255,255,255," + ca.toFixed(3) + ")");
-                    cglow.addColorStop(0.4, "rgba(200,220,255," + (ca * 0.4).toFixed(3) + ")");
-                    cglow.addColorStop(1, "rgba(200,220,255,0)");
-                    ctx.fillStyle = cglow;
+                ctx.globalAlpha = (0.4 + 0.6 * g) * (1 - om);
+                for (var pass = 0; pass < 2; pass++) {
                     ctx.beginPath();
-                    ctx.arc(cx2, cy2, csz * 4, 0, TAU);
-                    ctx.fill();
-                    coreN++;
+                    var anyP = false;
+                    for (i = 0; i < st.length; i++) {
+                        p = st[i];
+                        if (!p.alive) {
+                            continue;
+                        }
+                        var ang = p.ng < 0 ? -p.ng : p.ng;
+                        if (pass === 0 ? ang > 0.3 : (ang <= 0.3 || ang > 0.6)) {
+                            continue;
+                        }
+                        var ctt = p.t;
+                        if (ctt < 0.03 || ctt > 0.95) {
+                            continue;
+                        }
+                        var coff = p.ng * 1.5 + Math.sin(root.phase * 2.4 + p.ph * 3.1) * 0.4;
+                        var cx2 = left + ctt * root.fieldW;
+                        var cy2 = cy + auroraSpine(ctt) + coff;
+                        var csz = p.sz * 0.6 * (0.8 + eW * 0.4);
+                        if (csz < 0.2) {
+                            csz = 0.2;
+                        }
+                        var pr = csz * 2.2;
+                        ctx.moveTo(cx2 + pr, cy2);
+                        ctx.arc(cx2, cy2, pr, 0, TAU);
+                        anyP = true;
+                    }
+                    if (anyP) {
+                        ctx.fillStyle = pass === 0 ? "rgba(240,245,255,0.38)" : "rgba(200,220,255,0.18)";
+                        ctx.fill();
+                    }
                 }
+                ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = "source-over";
             }
 
